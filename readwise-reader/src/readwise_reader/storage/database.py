@@ -224,12 +224,14 @@ class Database:
         )
 
     def reconcile_orphaned_highlights(self) -> int:
-        """Re-link highlights with v2:* prefixed doc_ids to real documents.
+        """Move resolved highlights from staging_highlights to fact_highlights.
 
+        For each distinct v2:{id} doc_id in staging, looks up the real v3 document.
+        If found, inserts into fact_highlights with the real doc_id and deletes from staging.
         Returns the number of highlights reconciled.
         """
         orphaned = self.conn.execute(
-            "SELECT DISTINCT doc_id FROM fact_highlights WHERE doc_id LIKE 'v2:%'"
+            "SELECT DISTINCT doc_id FROM staging_highlights WHERE doc_id LIKE 'v2:%'"
         ).fetchall()
 
         reconciled = 0
@@ -237,13 +239,38 @@ class Database:
             v2_id = int(orphaned_doc_id.removeprefix("v2:"))
             real_doc_id = self.get_doc_id_by_v2_book_id(v2_id)
             if real_doc_id:
-                count = self.conn.execute(
-                    "UPDATE fact_highlights SET doc_id = ? WHERE doc_id = ? RETURNING highlight_id",
+                # Copy resolved highlights into fact_highlights
+                moved = self.conn.execute(
+                    """
+                    INSERT INTO fact_highlights (
+                        highlight_id, doc_id, content_text, note, color,
+                        location_pointer, tags, properties, highlighted_at, embedding
+                    )
+                    SELECT highlight_id, ?, content_text, note, color,
+                           location_pointer, tags, properties, highlighted_at, embedding
+                    FROM staging_highlights
+                    WHERE doc_id = ?
+                    ON CONFLICT (highlight_id) DO UPDATE SET
+                        doc_id = EXCLUDED.doc_id,
+                        content_text = EXCLUDED.content_text,
+                        note = EXCLUDED.note,
+                        color = EXCLUDED.color,
+                        location_pointer = EXCLUDED.location_pointer,
+                        tags = EXCLUDED.tags,
+                        properties = EXCLUDED.properties,
+                        highlighted_at = EXCLUDED.highlighted_at
+                    RETURNING highlight_id
+                    """,
                     [real_doc_id, orphaned_doc_id],
                 ).fetchall()
-                reconciled += len(count)
+                # Remove from staging
+                self.conn.execute(
+                    "DELETE FROM staging_highlights WHERE doc_id = ?",
+                    [orphaned_doc_id],
+                )
+                reconciled += len(moved)
                 logger.info(
-                    "Reconciled %d highlights: %s -> %s", len(count), orphaned_doc_id, real_doc_id
+                    "Reconciled %d highlights: %s -> %s", len(moved), orphaned_doc_id, real_doc_id
                 )
 
         return reconciled
@@ -285,7 +312,11 @@ class Database:
     # -- Highlight CRUD --
 
     def upsert_highlight(self, highlight: dict[str, Any], doc_id: str) -> None:
-        """Insert or update a highlight."""
+        """Insert or update a highlight.
+
+        Routes to staging_highlights when doc_id is unresolved (v2: prefix),
+        otherwise inserts directly into fact_highlights.
+        """
         tags_json = (
             orjson.dumps(highlight.get("tags")).decode() if highlight.get("tags") else None
         )
@@ -294,9 +325,10 @@ class Database:
             if highlight.get("properties")
             else None
         )
+        table = "staging_highlights" if doc_id.startswith("v2:") else "fact_highlights"
         self.conn.execute(
-            """
-            INSERT INTO fact_highlights (
+            f"""
+            INSERT INTO {table} (
                 highlight_id, doc_id, content_text, note, color,
                 location_pointer, tags, properties, highlighted_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)

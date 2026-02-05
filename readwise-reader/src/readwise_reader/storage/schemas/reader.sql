@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS dim_documents (
 -- 2. FACT: Highlights (atomic embeddable items)
 CREATE TABLE IF NOT EXISTS fact_highlights (
     highlight_id VARCHAR PRIMARY KEY,
-    doc_id VARCHAR,                    -- soft FK: may reference dim_documents or v2:{id} pending reconciliation
+    doc_id VARCHAR REFERENCES dim_documents(doc_id),
     content_text TEXT,
     note TEXT,
     color VARCHAR,
@@ -44,6 +44,20 @@ CREATE TABLE IF NOT EXISTS fact_highlights (
     properties JSON,
     highlighted_at TIMESTAMP,
     embedding FLOAT[]                 -- Stub: for future PyLate multi-vector embeddings
+);
+
+-- 2b. STAGING: Highlights awaiting document reconciliation (no FK)
+CREATE TABLE IF NOT EXISTS staging_highlights (
+    highlight_id VARCHAR PRIMARY KEY,
+    doc_id VARCHAR,                    -- v2:{book_id} pending reconciliation
+    content_text TEXT,
+    note TEXT,
+    color VARCHAR,
+    location_pointer VARCHAR,
+    tags JSON,
+    properties JSON,
+    highlighted_at TIMESTAMP,
+    embedding FLOAT[]
 );
 
 -- 3. DIMENSION: Tags
@@ -78,5 +92,6 @@ CREATE INDEX IF NOT EXISTS idx_doc_category ON dim_documents(category);
 CREATE INDEX IF NOT EXISTS idx_doc_location ON dim_documents(location);
 CREATE INDEX IF NOT EXISTS idx_doc_updated ON dim_documents(updated_in_reader);
 CREATE INDEX IF NOT EXISTS idx_highlight_doc ON fact_highlights(doc_id);
+CREATE INDEX IF NOT EXISTS idx_staging_doc ON staging_highlights(doc_id);
 CREATE INDEX IF NOT EXISTS idx_audit_doc ON audit_changes(doc_id);
 CREATE INDEX IF NOT EXISTS idx_docs_v2_book_id ON dim_documents(v2_book_id);

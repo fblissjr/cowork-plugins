@@ -162,12 +162,18 @@ class TestWebhookHighlightEvents:
         })
         assert resp.status_code == 200
 
-        # Should be stored with v2: prefix since no matching document exists
+        # Should be in staging_highlights with v2: prefix since no matching document exists
         result = handler_with_secret.db.conn.execute(
-            "SELECT doc_id FROM fact_highlights WHERE highlight_id = '99999'"
+            "SELECT doc_id FROM staging_highlights WHERE highlight_id = '99999'"
         ).fetchone()
         assert result is not None
         assert result[0] == "v2:777"
+
+        # Should NOT be in fact_highlights (FK would reject it)
+        fact_result = handler_with_secret.db.conn.execute(
+            "SELECT COUNT(*) FROM fact_highlights WHERE highlight_id = '99999'"
+        ).fetchone()
+        assert fact_result[0] == 0
 
 
 class TestWebhookErrorHandling:

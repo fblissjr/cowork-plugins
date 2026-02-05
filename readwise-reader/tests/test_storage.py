@@ -257,23 +257,55 @@ class TestIDReconciliation:
         # Create a real document with a v2_book_id
         db.upsert_document({"id": "abc-123", "title": "Test", "v2_book_id": 42})
 
-        # Insert highlights with orphaned v2: prefix doc_id
+        # Insert highlights with orphaned v2: prefix doc_id -- routes to staging
         db.upsert_highlight({"id": "h1", "text": "highlight 1"}, doc_id="v2:42")
         db.upsert_highlight({"id": "h2", "text": "highlight 2"}, doc_id="v2:42")
         db.upsert_highlight({"id": "h3", "text": "unrelated"}, doc_id="v2:999")
 
+        # Verify highlights landed in staging, not fact
+        staging_count = db.conn.execute(
+            "SELECT COUNT(*) FROM staging_highlights"
+        ).fetchone()[0]
+        assert staging_count == 3
+
+        fact_count = db.conn.execute(
+            "SELECT COUNT(*) FROM fact_highlights"
+        ).fetchone()[0]
+        assert fact_count == 0
+
         reconciled = db.reconcile_orphaned_highlights()
         assert reconciled == 2
 
-        # Verify highlights now point to the real document
+        # Reconciled highlights moved to fact_highlights with real doc_id
         highlights = db.get_highlights(doc_id="abc-123")
         assert len(highlights) == 2
 
-        # v2:999 is still orphaned (no matching document)
+        # v2:999 still in staging (no matching document)
         orphaned = db.conn.execute(
-            "SELECT doc_id FROM fact_highlights WHERE highlight_id = 'h3'"
+            "SELECT doc_id FROM staging_highlights WHERE highlight_id = 'h3'"
         ).fetchone()
         assert orphaned[0] == "v2:999"
+
+        # Staging should only have the unresolved one left
+        staging_remaining = db.conn.execute(
+            "SELECT COUNT(*) FROM staging_highlights"
+        ).fetchone()[0]
+        assert staging_remaining == 1
+
+    def test_resolved_highlight_goes_to_fact(self, db: Database) -> None:
+        # A highlight with a real doc_id goes directly to fact_highlights
+        db.upsert_document({"id": "doc-real", "title": "Real Doc"})
+        db.upsert_highlight({"id": "h1", "text": "good highlight"}, doc_id="doc-real")
+
+        fact_count = db.conn.execute(
+            "SELECT COUNT(*) FROM fact_highlights WHERE highlight_id = 'h1'"
+        ).fetchone()[0]
+        assert fact_count == 1
+
+        staging_count = db.conn.execute(
+            "SELECT COUNT(*) FROM staging_highlights"
+        ).fetchone()[0]
+        assert staging_count == 0
 
 
 class TestAudit:

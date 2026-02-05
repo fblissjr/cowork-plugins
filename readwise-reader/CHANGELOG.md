@@ -5,7 +5,8 @@
 - Full-text search with BM25 scoring via DuckDB FTS extension (replaces ILIKE)
 - Highlight-to-document ID reconciliation bridging Readwise Core v2 and Reader v3 APIs
 - Three-tier doc ID resolution: v2_book_id lookup, URL match, prefixed fallback with deferred reconciliation
-- Relaxed fact_highlights FK to support cross-API highlight ingestion
+- Staging table (`staging_highlights`) for unresolved v2 highlights; restored FK on `fact_highlights.doc_id`
+- Reconciliation moves staging highlights to fact_highlights once parent document is synced
 - FTS indexes auto-rebuild after sync operations
 - Webhook handler integration tests (auth, document events, highlight events, error handling)
 - Token refresh lifecycle tests (full OAuth flow, rotation invalidation, expired token handling)
