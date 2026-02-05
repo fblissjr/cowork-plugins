@@ -10,6 +10,7 @@
 - FTS indexes auto-rebuild after sync operations
 - Webhook handler integration tests (auth, document events, highlight events, error handling)
 - Token refresh lifecycle tests (full OAuth flow, rotation invalidation, expired token handling)
+- HTTPS via mkcert locally-trusted TLS certs; marketplace.json for Cowork plugin installation
 
 ## 0.1.0
 

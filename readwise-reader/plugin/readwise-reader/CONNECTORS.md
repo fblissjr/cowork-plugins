@@ -14,7 +14,7 @@ The MCP server runs locally and proxies requests to the Readwise Reader API, wit
 
 ## Setup
 
-1. Start the MCP server: `uv run readwise-reader`
+1. Start the MCP server: `uv run readwise-reader` (serves HTTPS on localhost:8787)
 2. The first MCP connection triggers an OAuth flow that asks for your Readwise API token
 3. Get your token at [readwise.io/access_token](https://readwise.io/access_token)
 4. After token entry, run `/readwise-reader:search sync` to pull your library

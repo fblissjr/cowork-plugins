@@ -18,7 +18,7 @@ DuckDB    Readwise    OAuth 2.1
  cache)    (v2+v3)
 ```
 
-- **MCP server** (`server.py`): Composite Starlette app hosting MCP tools, OAuth endpoints, and a webhook receiver on `localhost:8787`
+- **MCP server** (`server.py`): Composite Starlette app hosting MCP tools, OAuth endpoints, and a webhook receiver on `https://localhost:8787` (TLS via mkcert)
 - **Cowork plugin** (`plugin/readwise-reader/`): 5 commands + 3 skills that Claude uses to interact with the MCP server
 - **OAuth server** (`auth/oauth_server.py`): Bridges Readwise API-key auth to MCP's JWT-based auth. Users enter their Readwise token once via an HTML form; MCP clients only ever see short-lived JWTs
 - **DuckDB storage** (`storage/`): Star schema with `dim_documents`, `fact_highlights`, `staging_highlights`, `dim_tags`, `sync_state`, `audit_changes`. BM25 full-text search via the FTS extension
@@ -27,6 +27,12 @@ DuckDB    Readwise    OAuth 2.1
 ## quick start
 
 ```bash
+# one-time: generate locally-trusted TLS certs
+brew install mkcert
+mkcert -install
+mkdir -p certs && cd certs && mkcert localhost 127.0.0.1 ::1 && cd ..
+
+# run
 uv sync
 uv run readwise-reader
 ```
@@ -36,6 +42,21 @@ First MCP connection triggers an OAuth flow prompting for your Readwise API toke
 ```
 /readwise-reader:search sync
 ```
+
+## install in cowork
+
+With the server running, install the plugin in Claude Desktop Cowork:
+
+**Browse plugins > Add marketplace by URL**, then enter:
+```
+https://raw.githubusercontent.com/fblissjr/cowork-plugins/main/readwise-reader/marketplace.json
+```
+
+Or package and upload manually:
+```bash
+./scripts/package_plugin.sh    # creates readwise-reader.zip
+```
+Then **Browse plugins > Upload plugin** and drop the zip.
 
 ## MCP tools
 

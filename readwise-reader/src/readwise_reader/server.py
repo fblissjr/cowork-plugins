@@ -6,6 +6,7 @@ import contextlib
 import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from pathlib import Path
 
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import FastMCP
@@ -29,7 +30,26 @@ logger = logging.getLogger(__name__)
 
 HOST = "127.0.0.1"
 PORT = 8787
-SERVER_URL = f"http://{HOST}:{PORT}"
+SERVER_URL = f"https://{HOST}:{PORT}"
+
+# TLS cert paths (mkcert): check project certs/ first, then ~/.readwise-reader/certs/
+_PROJECT_CERTS = Path(__file__).resolve().parent.parent.parent / "certs"
+_HOME_CERTS = Path.home() / ".readwise-reader" / "certs"
+
+
+def _find_certs() -> tuple[Path, Path]:
+    """Locate TLS cert and key files. Raises FileNotFoundError if missing."""
+    for certs_dir in (_PROJECT_CERTS, _HOME_CERTS):
+        cert = next(certs_dir.glob("*+*.pem"), None) if certs_dir.exists() else None
+        key = next(certs_dir.glob("*+*-key.pem"), None) if certs_dir.exists() else None
+        if cert and key:
+            return cert, key
+    msg = (
+        f"TLS certs not found. Generate them with:\n"
+        f"  mkdir -p certs && cd certs && mkcert localhost 127.0.0.1 ::1\n"
+        f"Searched: {_PROJECT_CERTS}, {_HOME_CERTS}"
+    )
+    raise FileNotFoundError(msg)
 
 
 @dataclass
@@ -146,10 +166,20 @@ def main() -> None:
         level=logging.INFO,
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
     )
-    logger.info("Starting Readwise Reader MCP server on %s:%d", HOST, PORT)
+
+    cert_file, key_file = _find_certs()
+    logger.info("TLS certs: %s, %s", cert_file, key_file)
+    logger.info("Starting Readwise Reader MCP server on %s", SERVER_URL)
 
     app = create_app()
-    uvicorn.run(app, host=HOST, port=PORT, log_level="info")
+    uvicorn.run(
+        app,
+        host=HOST,
+        port=PORT,
+        ssl_certfile=str(cert_file),
+        ssl_keyfile=str(key_file),
+        log_level="info",
+    )
 
 
 if __name__ == "__main__":

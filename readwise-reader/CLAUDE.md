@@ -8,7 +8,7 @@ Project-specific instructions for Claude instances working on this codebase.
 
 This is a Readwise Reader MCP server + Cowork plugin. It has three layers:
 
-1. **MCP server** (`src/readwise_reader/server.py`): Composite Starlette app on `localhost:8787` serving MCP tools (via FastMCP), OAuth 2.1 endpoints, and a webhook receiver
+1. **MCP server** (`src/readwise_reader/server.py`): Composite Starlette app on `https://localhost:8787` (TLS via mkcert) serving MCP tools (via FastMCP), OAuth 2.1 endpoints, and a webhook receiver
 2. **Storage layer** (`src/readwise_reader/storage/`): DuckDB star schema with batch sync engine and real-time webhook ingestion
 3. **Cowork plugin** (`plugin/readwise-reader/`): Commands and skills that Claude uses to invoke MCP tools
 
@@ -108,16 +108,27 @@ Shared resources (`ReadwiseClient`, `Database`, `TokenStore`) are initialized in
 
 ```bash
 uv sync                      # install deps
-uv run readwise-reader       # start server on localhost:8787
+uv run readwise-reader       # start server on https://localhost:8787
 uv run pytest tests/ -v      # run tests (69 tests)
 uv run ruff check src/ tests/ # lint
 ```
+
+### TLS setup (required)
+
+The server requires HTTPS. Use mkcert for locally-trusted certs:
+```bash
+brew install mkcert && mkcert -install   # one-time
+mkdir -p certs && cd certs && mkcert localhost 127.0.0.1 ::1 && cd ..
+```
+
+Cert lookup order: `certs/` (project root) then `~/.readwise-reader/certs/`. The server fails with a clear error if no certs are found.
 
 ## data locations
 
 - DuckDB database: `~/.readwise-reader/reader.duckdb`
 - Encrypted token store: `~/.readwise-reader/tokens.enc`
 - Encryption key: `~/.readwise-reader/.key` (mode 0600)
+- TLS certs: `certs/` (gitignored) or `~/.readwise-reader/certs/`
 
 ## what's not yet implemented
 

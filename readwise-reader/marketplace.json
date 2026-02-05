@@ -1,0 +1,13 @@
+{
+  "name": "readwise-reader-marketplace",
+  "owner": {
+    "name": "Fred Bliss"
+  },
+  "plugins": [
+    {
+      "name": "readwise-reader",
+      "source": "./plugin/readwise-reader",
+      "description": "Search, save, and surface your Readwise Reader library. Turn your read-it-later archive into an active knowledge base."
+    }
+  ]
+}
