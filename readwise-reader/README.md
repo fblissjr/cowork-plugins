@@ -1,6 +1,6 @@
 # readwise-reader
 
-last updated: 2026-02-05
+last updated: 2026-02-06
 
 MCP server + Cowork plugin for Readwise Reader. Search, save, triage, and surface your reading library from Claude.
 
@@ -27,12 +27,16 @@ DuckDB    Readwise    OAuth 2.1
 ## quick start
 
 ```bash
-# one-time: generate locally-trusted TLS certs
+# 1. generate locally-trusted TLS certs (one-time)
 brew install mkcert
 mkcert -install
 mkdir -p certs && cd certs && mkcert localhost 127.0.0.1 ::1 && cd ..
 
-# run
+# 2. tell Claude Desktop to trust mkcert's CA (one-time, macOS)
+launchctl setenv NODE_EXTRA_CA_CERTS "$(mkcert -CAROOT)/rootCA.pem"
+# then restart Claude Desktop
+
+# 3. run
 uv sync
 uv run readwise-reader
 ```
@@ -41,6 +45,72 @@ First MCP connection triggers an OAuth flow prompting for your Readwise API toke
 
 ```
 /readwise-reader:search sync
+```
+
+### Claude Desktop TLS trust (one-time)
+
+Claude Desktop runs on Electron, whose Node.js runtime has its own CA bundle separate from the OS trust store. mkcert installs its root CA into the OS trust store but not Node's. The `NODE_EXTRA_CA_CERTS` env var bridges this gap.
+
+**macOS** (persists across reboots):
+```bash
+launchctl setenv NODE_EXTRA_CA_CERTS "$(mkcert -CAROOT)/rootCA.pem"
+```
+
+**Linux** (add to `~/.profile`):
+```bash
+export NODE_EXTRA_CA_CERTS="$(mkcert -CAROOT)/rootCA.pem"
+```
+
+**Windows** (PowerShell):
+```powershell
+[System.Environment]::SetEnvironmentVariable("NODE_EXTRA_CA_CERTS", "$(mkcert -CAROOT)\rootCA.pem", "User")
+```
+
+Restart Claude Desktop after setting this.
+
+### environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `READWISE_HOST` | `127.0.0.1` | Bind address |
+| `READWISE_PORT` | `8787` | Bind port |
+| `READWISE_NO_TLS` | (unset) | Set to `1`/`true`/`yes` to disable TLS |
+| `READWISE_API_TOKEN` | (unset) | Readwise API token (bypasses OAuth; for stdio mode) |
+
+## running modes
+
+### HTTPS + custom connector (Cowork)
+
+Default mode. Requires the TLS setup above.
+
+```bash
+uv run readwise-reader
+```
+
+In Claude Desktop: **Add custom connector** -> `https://localhost:8787/mcp`
+
+The OAuth flow opens a browser for your Readwise API token on first connect.
+
+### stdio (native MCP, no TLS)
+
+No server process to manage. Claude Desktop launches and manages it directly.
+
+```bash
+uv run mcp install src/readwise_reader/server.py:mcp \
+  -n "Readwise Reader" \
+  -v READWISE_API_TOKEN=<your-readwise-token>
+```
+
+Get your token at [readwise.io/access_token](https://readwise.io/access_token).
+
+### HTTP (dev/debugging)
+
+For MCP Inspector or local testing without TLS:
+
+```bash
+READWISE_NO_TLS=1 uv run readwise-reader
+# or with MCP Inspector:
+READWISE_API_TOKEN=<token> uv run mcp dev src/readwise_reader/server.py:mcp
 ```
 
 ## install in cowork
@@ -82,11 +152,12 @@ Then **Browse plugins > Upload plugin** and drop the zip.
 ## testing
 
 ```bash
-uv run pytest tests/ -v
-uv run ruff check src/ tests/
+uv run pytest tests/ -v          # all tests (unit + e2e)
+uv run pytest tests/e2e/ -v     # e2e tests only
+uv run ruff check src/ tests/    # lint
 ```
 
-69 tests covering storage, API client, auth (including token refresh lifecycle), webhook handler, and MCP tools.
+Tests cover storage, API client, auth (including token refresh lifecycle), webhook handler, MCP tools, and end-to-end MCP protocol tests. E2E tests use `httpx.ASGITransport` to run the full MCP protocol stack in-process (no TLS, no ports).
 
 ## data storage
 

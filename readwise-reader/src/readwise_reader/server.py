@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import os
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,6 +13,7 @@ from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import FastMCP
 from pydantic import AnyHttpUrl
 from starlette.applications import Starlette
+from starlette.middleware.cors import CORSMiddleware
 from starlette.routing import Mount, Route
 
 from readwise_reader.api.client import ReadwiseClient
@@ -28,9 +30,11 @@ from readwise_reader.tools.triage import register_triage_tools
 
 logger = logging.getLogger(__name__)
 
-HOST = "127.0.0.1"
-PORT = 8787
-SERVER_URL = f"https://{HOST}:{PORT}"
+HOST = os.environ.get("READWISE_HOST", "127.0.0.1")
+PORT = int(os.environ.get("READWISE_PORT", "8787"))
+USE_TLS = os.environ.get("READWISE_NO_TLS", "").lower() not in ("1", "true", "yes")
+PROTOCOL = "https" if USE_TLS else "http"
+SERVER_URL = f"{PROTOCOL}://{HOST}:{PORT}"
 
 # TLS cert paths (mkcert): check project certs/ first, then ~/.readwise-reader/certs/
 _PROJECT_CERTS = Path(__file__).resolve().parent.parent.parent / "certs"
@@ -74,7 +78,7 @@ token_verifier = ReadwiseTokenVerifier(oauth)
 async def app_lifespan(server: FastMCP) -> AsyncIterator[AppContext]:
     """Initialize shared resources for the MCP server."""
     db = Database()
-    readwise_token = token_store.get_readwise_token()
+    readwise_token = os.environ.get("READWISE_API_TOKEN") or token_store.get_readwise_token()
 
     if readwise_token:
         client = ReadwiseClient(token=readwise_token)
@@ -155,7 +159,17 @@ def create_app() -> Starlette:
         Mount("/", mcp_app),
     ]
 
-    return Starlette(routes=routes, lifespan=lifespan)
+    app = Starlette(routes=routes, lifespan=lifespan)
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+        allow_headers=["*"],
+        expose_headers=["mcp-session-id"],
+    )
+
+    return app
 
 
 def main() -> None:
@@ -167,19 +181,17 @@ def main() -> None:
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
     )
 
-    cert_file, key_file = _find_certs()
-    logger.info("TLS certs: %s, %s", cert_file, key_file)
+    uvicorn_kwargs: dict[str, object] = {"host": HOST, "port": PORT, "log_level": "info"}
+    if USE_TLS:
+        cert_file, key_file = _find_certs()
+        uvicorn_kwargs["ssl_certfile"] = str(cert_file)
+        uvicorn_kwargs["ssl_keyfile"] = str(key_file)
+        logger.info("TLS certs: %s, %s", cert_file, key_file)
+
     logger.info("Starting Readwise Reader MCP server on %s", SERVER_URL)
 
     app = create_app()
-    uvicorn.run(
-        app,
-        host=HOST,
-        port=PORT,
-        ssl_certfile=str(cert_file),
-        ssl_keyfile=str(key_file),
-        log_level="info",
-    )
+    uvicorn.run(app, **uvicorn_kwargs)
 
 
 if __name__ == "__main__":

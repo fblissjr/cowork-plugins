@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0
+
+- Env-driven server config: `READWISE_HOST`, `READWISE_PORT`, `READWISE_NO_TLS`, `READWISE_API_TOKEN`
+- Optional TLS: HTTPS by default, disable with `READWISE_NO_TLS=1` for dev/testing
+- CORS middleware with `mcp-session-id` header exposed (required for Electron/browser MCP clients)
+- Env var token fallback (`READWISE_API_TOKEN`) for stdio mode via `mcp dev`/`mcp install`
+- E2E test suite: in-process ASGI MCP client tests covering connection, OAuth, all tools, and error handling
+- Documented `NODE_EXTRA_CA_CERTS` setup for Claude Desktop TLS trust
+
 ## 0.2.0
 
 - Full-text search with BM25 scoring via DuckDB FTS extension (replaces ILIKE)

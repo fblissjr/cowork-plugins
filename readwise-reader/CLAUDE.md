@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-last updated: 2026-02-05
+last updated: 2026-02-06
 
 Project-specific instructions for Claude instances working on this codebase.
 
@@ -8,7 +8,7 @@ Project-specific instructions for Claude instances working on this codebase.
 
 This is a Readwise Reader MCP server + Cowork plugin. It has three layers:
 
-1. **MCP server** (`src/readwise_reader/server.py`): Composite Starlette app on `https://localhost:8787` (TLS via mkcert) serving MCP tools (via FastMCP), OAuth 2.1 endpoints, and a webhook receiver
+1. **MCP server** (`src/readwise_reader/server.py`): Composite Starlette app on `https://localhost:8787` (TLS via mkcert, configurable via env vars) serving MCP tools (via FastMCP), OAuth 2.1 endpoints, and a webhook receiver
 2. **Storage layer** (`src/readwise_reader/storage/`): DuckDB star schema with batch sync engine and real-time webhook ingestion
 3. **Cowork plugin** (`plugin/readwise-reader/`): Commands and skills that Claude uses to invoke MCP tools
 
@@ -52,6 +52,12 @@ tests/
   test_api_client.py -- httpx/respx mocked API client tests
   test_auth.py       -- OAuth server, PKCE, JWT, token refresh lifecycle
   test_tools.py      -- MCP tool integration tests
+  e2e/
+    conftest.py            -- Fixtures: test ASGI app, MCP client session, seeded DB
+    test_e2e_connection.py -- MCP handshake, capabilities, session lifecycle
+    test_e2e_oauth.py      -- OAuth metadata, registration, PKCE flow, token rejection
+    test_e2e_tools.py      -- Tool listing + invocation for all 5 tool modules
+    test_e2e_errors.py     -- Auth failures, invalid tools, malformed requests
 
 internal/log/        -- Daily development logs (log_YYYY-MM-DD.md)
 ```
@@ -107,21 +113,57 @@ Shared resources (`ReadwiseClient`, `Database`, `TokenStore`) are initialized in
 ## running
 
 ```bash
-uv sync                      # install deps
-uv run readwise-reader       # start server on https://localhost:8787
-uv run pytest tests/ -v      # run tests (69 tests)
-uv run ruff check src/ tests/ # lint
+uv sync                        # install deps
+uv run readwise-reader         # start server on https://localhost:8787 (default, TLS)
+uv run pytest tests/ -v        # run all tests (unit + e2e)
+uv run pytest tests/e2e/ -v   # run e2e tests only
+uv run ruff check src/ tests/  # lint
 ```
 
-### TLS setup (required)
+### environment variables
 
-The server requires HTTPS. Use mkcert for locally-trusted certs:
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `READWISE_HOST` | `127.0.0.1` | Bind address |
+| `READWISE_PORT` | `8787` | Bind port |
+| `READWISE_NO_TLS` | (unset) | Set to `1`/`true`/`yes` to disable TLS (for dev/testing) |
+| `READWISE_API_TOKEN` | (unset) | Readwise API token (bypasses OAuth, used in stdio mode) |
+
+### TLS setup (required for HTTPS mode)
+
+The server defaults to HTTPS. Use mkcert for locally-trusted certs:
 ```bash
 brew install mkcert && mkcert -install   # one-time
 mkdir -p certs && cd certs && mkcert localhost 127.0.0.1 ::1 && cd ..
 ```
 
 Cert lookup order: `certs/` (project root) then `~/.readwise-reader/certs/`. The server fails with a clear error if no certs are found.
+
+### Claude Desktop setup (one-time)
+
+Claude Desktop's Electron runtime doesn't trust mkcert's CA by default. Fix with `NODE_EXTRA_CA_CERTS`:
+
+**macOS** (persists across reboots):
+```bash
+launchctl setenv NODE_EXTRA_CA_CERTS "$(mkcert -CAROOT)/rootCA.pem"
+# Restart Claude Desktop after running this
+```
+
+**Linux** (add to ~/.profile or equivalent):
+```bash
+export NODE_EXTRA_CA_CERTS="$(mkcert -CAROOT)/rootCA.pem"
+```
+
+**Windows** (PowerShell, then restart Claude Desktop):
+```powershell
+[System.Environment]::SetEnvironmentVariable("NODE_EXTRA_CA_CERTS", "$(mkcert -CAROOT)\rootCA.pem", "User")
+```
+
+### running modes
+
+- **HTTPS (default)**: `uv run readwise-reader` -- for Claude Desktop Cowork connector
+- **HTTP (dev)**: `READWISE_NO_TLS=1 uv run readwise-reader` -- for MCP Inspector, local testing
+- **stdio**: `READWISE_API_TOKEN=<token> uv run mcp dev src/readwise_reader/server.py:mcp` -- for Claude Desktop native MCP
 
 ## data locations
 

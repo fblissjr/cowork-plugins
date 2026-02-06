@@ -42,6 +42,9 @@ where = ["src"]
 testpaths = ["tests"]
 pythonpath = ["src"]
 asyncio_mode = "auto"
+markers = [
+    "e2e: end-to-end tests using in-process ASGI MCP client",
+]
 
 [tool.ruff]
 line-length = 100
